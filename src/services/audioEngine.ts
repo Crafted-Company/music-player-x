@@ -1,4 +1,4 @@
-// Rock-Solid Universal HTML5 Audio Engine
+// Rock-Solid Universal HTML5 Audio Engine with In-Memory Buffer Fallback
 
 export const EQ_FREQUENCIES = [60, 250, 1000, 4000, 12000];
 
@@ -46,6 +46,25 @@ class AudioEngine {
     }
 
     this.audio.preload = 'auto';
+
+    // In-memory Blob fallback when Android WebView encounters direct HTTP stream codec drop
+    this.audio.onerror = async () => {
+      const audioEl = this.audio;
+      if (!audioEl) return;
+      const currentSrc = audioEl.src;
+
+      if (currentSrc && !currentSrc.startsWith('blob:') && !currentSrc.startsWith('data:')) {
+        try {
+          const res = await fetch(currentSrc);
+          if (res.ok) {
+            const blob = await res.blob();
+            audioEl.src = URL.createObjectURL(blob);
+            audioEl.play().catch(() => {});
+          }
+        } catch (e) {}
+      }
+    };
+
     return this.audio;
   }
 
@@ -53,12 +72,9 @@ class AudioEngine {
     return this.initAudioElement();
   }
 
-  /**
-   * Synchronous track loader for instant playback
-   */
-  public loadTrack(directUrl: string): void {
+  public loadTrack(url: string) {
     const audio = this.initAudioElement();
-    audio.src = directUrl;
+    audio.src = url;
     audio.load();
   }
 
@@ -67,7 +83,18 @@ class AudioEngine {
     try {
       await audio.play();
     } catch (err) {
-      console.warn('Playback error or user interaction needed:', err);
+      if (audio.src && !audio.src.startsWith('blob:') && !audio.src.startsWith('data:')) {
+        try {
+          const res = await fetch(audio.src);
+          if (res.ok) {
+            const blob = await res.blob();
+            audio.src = URL.createObjectURL(blob);
+            await audio.play();
+          }
+        } catch (blobErr) {
+          console.warn('Playback error:', blobErr);
+        }
+      }
     }
   }
 
