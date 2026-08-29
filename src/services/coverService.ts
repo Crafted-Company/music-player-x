@@ -1,5 +1,6 @@
 export class CoverService {
   private cache = new Map<string, string>();
+  private artistCache = new Map<string, string>();
 
   constructor() {
     try {
@@ -11,17 +12,41 @@ export class CoverService {
             const rawKey = k.replace('cover_cache_', '');
             this.cache.set(rawKey, val);
           }
+        } else if (k && k.startsWith('artist_cache_')) {
+          const val = localStorage.getItem(k);
+          if (val) {
+            const rawKey = k.replace('artist_cache_', '');
+            this.artistCache.set(rawKey, val);
+          }
         }
       }
     } catch (e) {}
   }
 
-  public getCachedCover(trackTitle: string, artistName: string): string | null {
-    const key = `${trackTitle}:${artistName}`.toLowerCase().trim();
-    if (this.cache.has(key)) return this.cache.get(key)!;
+  public getCachedCover(trackTitle: string, artistName?: string): string | null {
+    if (!trackTitle) return null;
+    if (artistName) {
+      const key = `${trackTitle}:${artistName}`.toLowerCase().trim();
+      if (this.cache.has(key)) return this.cache.get(key)!;
+    }
     const titleOnlyKey = trackTitle.toLowerCase().trim();
     if (this.cache.has(titleOnlyKey)) return this.cache.get(titleOnlyKey)!;
     return null;
+  }
+
+  public getCachedArtist(trackTitle: string): string | null {
+    if (!trackTitle) return null;
+    const key = trackTitle.toLowerCase().trim();
+    return this.artistCache.get(key) || null;
+  }
+
+  public cacheArtist(trackTitle: string, artistName: string) {
+    if (!trackTitle || !artistName || artistName === 'Various Artists') return;
+    const key = trackTitle.toLowerCase().trim();
+    this.artistCache.set(key, artistName);
+    try {
+      localStorage.setItem(`artist_cache_${key}`, artistName);
+    } catch (e) {}
   }
 
   public parseArtistAndTitle(rawTitle: string, rawArtist?: string): { title: string; artist: string } {
@@ -34,13 +59,21 @@ export class CoverService {
       /unknown/i.test(artist) ||
       /local\s*artist/i.test(artist);
 
-    if (isGenericArtist && (title.includes(' - ') || title.includes(' – ') || title.includes(' — '))) {
+    // If artist is generic, check if we previously cached the true artist for this song title
+    if (isGenericArtist) {
+      const cached = this.getCachedArtist(title);
+      if (cached) {
+        artist = cached;
+      }
+    }
+
+    if ((isGenericArtist || !artist) && (title.includes(' - ') || title.includes(' – ') || title.includes(' — '))) {
       const parts = title.split(/\s*[-–—]\s*/);
       if (parts.length >= 2) {
         artist = parts[0].trim();
         title = parts.slice(1).join(' - ').trim();
       }
-    } else if (isGenericArtist && /by\s+([A-Za-z0-9\s]+)/i.test(title)) {
+    } else if ((isGenericArtist || !artist) && /by\s+([A-Za-z0-9\s]+)/i.test(title)) {
       const match = title.match(/(.*?)\s+by\s+([A-Za-z0-9\s]+)/i);
       if (match) {
         title = match[1].trim();
@@ -75,8 +108,12 @@ export class CoverService {
     const key = `${parsed.title}:${parsed.artist}`.toLowerCase().trim();
     const titleOnlyKey = parsed.title.toLowerCase().trim();
 
-    if (this.cache.has(key)) return { coverUrl: this.cache.get(key)! };
-    if (this.cache.has(titleOnlyKey)) return { coverUrl: this.cache.get(titleOnlyKey)! };
+    if (this.cache.has(key)) {
+      return { coverUrl: this.cache.get(key)!, discoveredArtist: parsed.artist || this.getCachedArtist(parsed.title) || undefined };
+    }
+    if (this.cache.has(titleOnlyKey)) {
+      return { coverUrl: this.cache.get(titleOnlyKey)!, discoveredArtist: parsed.artist || this.getCachedArtist(parsed.title) || undefined };
+    }
 
     try {
       const searchTerms: string[] = [];
@@ -93,7 +130,6 @@ export class CoverService {
           const data = await res.json();
           const results: any[] = data.results || [];
           if (results.length > 0) {
-            // 1. If artist given, find matching artist
             let bestResult = results[0];
             if (parsed.artist) {
               const matched = results.find(
@@ -103,7 +139,6 @@ export class CoverService {
               );
               if (matched) bestResult = matched;
             } else {
-              // 2. If no artist (e.g. was Various Artists), prioritize exact 1:1 title matches (e.g. 'So High' by Doja Cat)
               const exactTitleMatch = results.find(
                 (item: any) => item.trackName?.toLowerCase().trim() === parsed.title.toLowerCase().trim()
               );
@@ -119,6 +154,12 @@ export class CoverService {
                 localStorage.setItem(`cover_cache_${key}`, highResUrl);
                 localStorage.setItem(`cover_cache_${titleOnlyKey}`, highResUrl);
               } catch (e) {}
+
+              if (bestResult.artistName) {
+                this.cacheArtist(parsed.title, bestResult.artistName);
+                this.cacheArtist(trackTitle, bestResult.artistName);
+              }
+
               return { coverUrl: highResUrl, discoveredArtist: bestResult.artistName };
             }
           }

@@ -152,10 +152,13 @@ export const MusicPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
       const saved = localStorage.getItem('crafted_servers');
       if (saved) {
         const parsed = JSON.parse(saved) as SubsonicServerConfig[];
-        return parsed.map((s) => ({
-          ...s,
-          password: s.password || 'admin',
-        }));
+        const valid = parsed.filter((s) => s.url && !s.url.includes('localhost'));
+        if (valid.length > 0) {
+          return valid.map((s) => ({
+            ...s,
+            password: s.password || 'admin',
+          }));
+        }
       }
     } catch (e) {}
     return PRECONFIGURED_SERVERS;
@@ -166,7 +169,7 @@ export const MusicPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
       const saved = localStorage.getItem('crafted_servers');
       if (saved) {
         const list = JSON.parse(saved) as SubsonicServerConfig[];
-        const found = list.find((s) => s.isActive);
+        const found = list.find((s) => s.isActive && s.url && !s.url.includes('localhost'));
         if (found) return { ...found, password: found.password || 'admin' };
       }
     } catch (e) {}
@@ -189,10 +192,24 @@ export const MusicPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
       const storedPlaylists = await localLibraryService.loadStoredPlaylists();
 
       if (stored && stored.length > 0) {
-        const hydrated = stored.map((t) => ({
-          ...t,
-          coverUrl: t.coverUrl || coverService.getCachedCover(t.title, t.artist) || undefined,
-        }));
+        const hydrated = stored.map((t) => {
+          const parsed = coverService.parseArtistAndTitle(t.title, t.artist);
+          const cachedArtist = coverService.getCachedArtist(t.title) || coverService.getCachedArtist(parsed.title);
+          const finalArtist =
+            t.artist && t.artist !== 'Various Artists'
+              ? t.artist
+              : cachedArtist || (parsed.artist && parsed.artist !== 'Various Artists' ? parsed.artist : t.artist);
+          const cachedCover =
+            t.coverUrl ||
+            coverService.getCachedCover(t.title, finalArtist) ||
+            coverService.getCachedCover(parsed.title, parsed.artist) ||
+            undefined;
+          return {
+            ...t,
+            artist: finalArtist || 'Unknown Artist',
+            coverUrl: cachedCover,
+          };
+        });
         setAllTracks(hydrated);
         if (!currentTrack) {
           setCurrentTrack(hydrated[0]);
@@ -855,41 +872,57 @@ export const MusicPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
     try {
       const remoteSongs = await subsonicService.getAllSongs(server);
       if (remoteSongs.length > 0) {
+        let finalMergedSongs: Track[] = [];
+
         setAllTracks((curr) => {
           const nonSubsonic = curr.filter((t) => t.source !== 'subsonic');
           const mergedRemote = remoteSongs.map((remote) => {
+            const parsed = coverService.parseArtistAndTitle(remote.title, remote.artist);
+            const cleanTitle = parsed.title || remote.title;
             const existing = curr.find(
-              (t) => t.id === remote.id || (t.title === remote.title && t.artist === remote.artist)
+              (t) => t.id === remote.id || t.title === cleanTitle || t.title === remote.title
             );
-            const cachedCover = coverService.getCachedCover(remote.title, remote.artist);
+
+            const cachedArtist = coverService.getCachedArtist(cleanTitle) || coverService.getCachedArtist(remote.title);
+            const cachedCover =
+              existing?.coverUrl ||
+              coverService.getCachedCover(cleanTitle, parsed.artist) ||
+              coverService.getCachedCover(remote.title, remote.artist);
+
+            const finalArtist =
+              (existing?.artist && existing.artist !== 'Various Artists')
+                ? existing.artist
+                : cachedArtist || (parsed.artist && parsed.artist !== 'Various Artists' ? parsed.artist : remote.artist);
+
             return {
               ...remote,
-              coverUrl: existing?.coverUrl || cachedCover || remote.coverUrl,
-              artist: existing?.artist || remote.artist,
+              title: cleanTitle,
+              artist: finalArtist || 'Unknown Artist',
+              coverUrl: cachedCover || remote.coverUrl,
             };
           });
 
+          finalMergedSongs = mergedRemote;
           const merged = [...nonSubsonic, ...mergedRemote];
           localLibraryService.saveTracks(merged);
           return merged;
         });
 
-        // Group remote songs by album/folder into Playlists so all Navidrome folders appear in Playlists!
+        // Group enriched remote songs by album/folder into Playlists
         const albumGroups = new Map<string, Track[]>();
-        remoteSongs.forEach((song) => {
+        finalMergedSongs.forEach((song) => {
           const folderName = song.album || 'Navidrome Vault';
           if (!albumGroups.has(folderName)) albumGroups.set(folderName, []);
           albumGroups.get(folderName)!.push(song);
         });
 
         const albumPlaylists: Playlist[] = await Promise.all(
-          Array.from(albumGroups.entries()).map(async ([folderName, songs], idx) => {
-            const covers = songs
-              .map((s) => coverService.getCachedCover(s.title, s.artist) || s.coverUrl || '')
-              .filter(Boolean);
+          Array.from(albumGroups.entries()).map(async ([folderName, songs]) => {
+            const cleanSlug = folderName.toLowerCase().replace(/[^a-z0-9]/g, '-');
+            const covers = songs.map((s) => s.coverUrl || '').filter(Boolean);
             const mosaic = covers.length > 0 ? await coverService.generateMosaicCollage(covers) : undefined;
             return {
-              id: `subsonic-album-pl-${idx}`,
+              id: `subsonic-folder-${cleanSlug}`,
               name: folderName,
               trackCount: songs.length,
               coverUrl: mosaic,
@@ -903,25 +936,41 @@ export const MusicPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
         const populatedCustomPlaylists: Playlist[] = [];
 
         for (const pl of remotePlaylists) {
-          const tracks = await subsonicService.getPlaylistTracks(server, pl.id);
-          const covers = tracks
-            .map((t) => coverService.getCachedCover(t.title, t.artist) || t.coverUrl || '')
-            .filter(Boolean);
+          const rawTracks = await subsonicService.getPlaylistTracks(server, pl.id);
+          const enrichedTracks = rawTracks.map((raw) => {
+            const match = finalMergedSongs.find((m) => m.id === raw.id || m.title === raw.title);
+            return match || raw;
+          });
+          const covers = enrichedTracks.map((t) => t.coverUrl || '').filter(Boolean);
           const mosaic = covers.length > 0 ? await coverService.generateMosaicCollage(covers) : pl.coverUrl;
 
           populatedCustomPlaylists.push({
             ...pl,
-            tracks,
-            trackCount: tracks.length || pl.trackCount,
+            tracks: enrichedTracks,
+            trackCount: enrichedTracks.length || pl.trackCount,
             coverUrl: mosaic,
           });
         }
 
-        const combinedSubsonicPlaylists = [...populatedCustomPlaylists, ...albumPlaylists];
-        if (combinedSubsonicPlaylists.length > 0) {
+        // Deduplicate combined playlists by normalized name so no duplicate folders exist
+        const playlistMap = new Map<string, Playlist>();
+        [...populatedCustomPlaylists, ...albumPlaylists].forEach((pl) => {
+          const key = pl.name.toLowerCase().trim();
+          if (!playlistMap.has(key)) {
+            playlistMap.set(key, pl);
+          } else {
+            const existing = playlistMap.get(key)!;
+            if ((pl.tracks?.length || 0) > (existing.tracks?.length || 0)) {
+              playlistMap.set(key, pl);
+            }
+          }
+        });
+        const uniqueSubsonicPlaylists = Array.from(playlistMap.values());
+
+        if (uniqueSubsonicPlaylists.length > 0) {
           setPlaylists((curr) => {
             const nonSubsonic = curr.filter((p) => !p.id.startsWith('subsonic-'));
-            const updated = [...nonSubsonic, ...combinedSubsonicPlaylists];
+            const updated = [...nonSubsonic, ...uniqueSubsonicPlaylists];
             localLibraryService.savePlaylists(updated);
             return updated;
           });

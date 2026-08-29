@@ -1,4 +1,4 @@
-// Rock-Solid Universal HTML5 Audio Engine with In-Memory Buffer Fallback
+// Rock-Solid Universal HTML5 Audio Engine with Race-Condition Protected Stream Loading
 
 export const EQ_FREQUENCIES = [60, 250, 1000, 4000, 12000];
 
@@ -16,6 +16,8 @@ export const DEFAULT_EQ_PRESETS: { [key: string]: number[] } = {
 class AudioEngine {
   private audio: HTMLAudioElement | null = null;
   private clickAudioCtx: AudioContext | null = null;
+  private playbackSessionId: number = 0;
+  private currentExpectedUrl: string = '';
 
   private initAudioElement(): HTMLAudioElement {
     if (this.audio) return this.audio;
@@ -47,19 +49,22 @@ class AudioEngine {
 
     this.audio.preload = 'auto';
 
-    // In-memory Blob fallback when Android WebView encounters direct HTTP stream codec drop
+    // In-memory Blob fallback ONLY when direct stream encounters unrecoverable codec error for current song
     this.audio.onerror = async () => {
       const audioEl = this.audio;
       if (!audioEl) return;
-      const currentSrc = audioEl.src;
+      const targetSession = this.playbackSessionId;
+      const targetUrl = this.currentExpectedUrl;
 
-      if (currentSrc && !currentSrc.startsWith('blob:') && !currentSrc.startsWith('data:')) {
+      if (targetUrl && !targetUrl.startsWith('blob:') && !targetUrl.startsWith('data:')) {
         try {
-          const res = await fetch(currentSrc);
-          if (res.ok) {
+          const res = await fetch(targetUrl);
+          if (res.ok && this.playbackSessionId === targetSession) {
             const blob = await res.blob();
-            audioEl.src = URL.createObjectURL(blob);
-            audioEl.play().catch(() => {});
+            if (this.playbackSessionId === targetSession) {
+              audioEl.src = URL.createObjectURL(blob);
+              audioEl.play().catch(() => {});
+            }
           }
         } catch (e) {}
       }
@@ -74,22 +79,30 @@ class AudioEngine {
 
   public loadTrack(url: string) {
     const audio = this.initAudioElement();
+    this.playbackSessionId++;
+    this.currentExpectedUrl = url;
     audio.src = url;
     audio.load();
   }
 
   public async play(): Promise<void> {
     const audio = this.initAudioElement();
+    const targetSession = this.playbackSessionId;
+    const targetUrl = this.currentExpectedUrl;
+
     try {
       await audio.play();
     } catch (err) {
-      if (audio.src && !audio.src.startsWith('blob:') && !audio.src.startsWith('data:')) {
+      if (this.playbackSessionId !== targetSession) return;
+      if (targetUrl && !targetUrl.startsWith('blob:') && !targetUrl.startsWith('data:')) {
         try {
-          const res = await fetch(audio.src);
-          if (res.ok) {
+          const res = await fetch(targetUrl);
+          if (res.ok && this.playbackSessionId === targetSession) {
             const blob = await res.blob();
-            audio.src = URL.createObjectURL(blob);
-            await audio.play();
+            if (this.playbackSessionId === targetSession) {
+              audio.src = URL.createObjectURL(blob);
+              await audio.play();
+            }
           }
         } catch (blobErr) {
           console.warn('Playback error:', blobErr);

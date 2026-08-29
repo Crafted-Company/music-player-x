@@ -77,6 +77,7 @@ class LocalLibraryService {
     const db = await this.initDB();
     const tx = db.transaction([STORE_PLAYLISTS], 'readwrite');
     const store = tx.objectStore(STORE_PLAYLISTS);
+    store.clear();
     playlists.forEach((pl) => store.put(pl));
     return new Promise((resolve, reject) => {
       tx.oncomplete = () => resolve();
@@ -195,7 +196,7 @@ class LocalLibraryService {
   public groupTracksByArtist(tracks: Track[]): Artist[] {
     const map = new Map<string, Track[]>();
     tracks.forEach((t) => {
-      const artist = t.artist || 'Unknown Artist';
+      const artist = (t.artist || 'Unknown Artist').trim();
       if (!map.has(artist)) map.set(artist, []);
       map.get(artist)!.push(t);
     });
@@ -211,19 +212,27 @@ class LocalLibraryService {
   public groupTracksByAlbum(tracks: Track[]): Album[] {
     const map = new Map<string, Track[]>();
     tracks.forEach((t) => {
-      const albumKey = `${t.album || 'Unknown Album'}___${t.artist || 'Unknown'}`;
-      if (!map.has(albumKey)) map.set(albumKey, []);
-      map.get(albumKey)!.push(t);
+      const albumTitle = (t.album || 'Navidrome Vault').trim();
+      if (!map.has(albumTitle)) map.set(albumTitle, []);
+      map.get(albumTitle)!.push(t);
     });
 
-    return Array.from(map.entries()).map(([key, songList], idx) => {
-      const [title, artist] = key.split('___');
+    return Array.from(map.entries()).map(([title, songList], idx) => {
+      const artists = Array.from(new Set(songList.map((s) => s.artist).filter(Boolean)));
+      const displayArtist =
+        artists.length === 1
+          ? artists[0]
+          : artists.length > 1
+          ? 'Various Artists'
+          : 'Unknown Artist';
+      const covers = songList.map((s) => s.coverUrl || '').filter(Boolean);
+
       return {
         id: `album-${idx}`,
         title,
-        artist,
+        artist: displayArtist,
         trackCount: songList.length,
-        coverUrl: songList.find((s) => !!s.coverUrl)?.coverUrl,
+        coverUrl: covers[0] || undefined,
         tracks: songList,
       };
     });

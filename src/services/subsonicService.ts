@@ -1,21 +1,24 @@
-import type { Playlist, SubsonicServerConfig, Track } from '../types';
+// Navidrome & Subsonic REST API Client
+
+import type { SubsonicServerConfig, Track, Playlist } from '../types';
 
 function md5(string: string): string {
-  function rotateLeft(lValue: number, iShiftBits: number) {
+  function RotateLeft(lValue: number, iShiftBits: number) {
     return (lValue << iShiftBits) | (lValue >>> (32 - iShiftBits));
   }
-  function addUnsigned(lX: number, lY: number) {
-    const lX8 = lX & 0x80000000;
-    const lY8 = lY & 0x80000000;
+  function AddUnsigned(lX: number, lY: number) {
     const lX4 = lX & 0x40000000;
     const lY4 = lY & 0x40000000;
+    const lX8 = lX & 0x80000000;
+    const lY8 = lY & 0x80000000;
     const lResult = (lX & 0x3fffffff) + (lY & 0x3fffffff);
     if (lX4 & lY4) return lResult ^ 0x80000000 ^ lX8 ^ lY8;
     if (lX4 | lY4) {
       if (lResult & 0x40000000) return lResult ^ 0xc0000000 ^ lX8 ^ lY8;
-      return lResult ^ 0x40000000 ^ lX8 ^ lY8;
+      else return lResult ^ 0x40000000 ^ lX8 ^ lY8;
+    } else {
+      return lResult ^ lX8 ^ lY8;
     }
-    return lResult ^ lX8 ^ lY8;
   }
   function F(x: number, y: number, z: number) {
     return (x & y) | (~x & z);
@@ -30,23 +33,22 @@ function md5(string: string): string {
     return y ^ (x | ~z);
   }
   function FF(a: number, b: number, c: number, d: number, x: number, s: number, ac: number) {
-    a = addUnsigned(a, addUnsigned(addUnsigned(F(b, c, d), x), ac));
-    return addUnsigned(rotateLeft(a, s), b);
+    a = AddUnsigned(a, AddUnsigned(AddUnsigned(F(b, c, d), x), ac));
+    return AddUnsigned(RotateLeft(a, s), b);
   }
   function GG(a: number, b: number, c: number, d: number, x: number, s: number, ac: number) {
-    a = addUnsigned(a, addUnsigned(addUnsigned(G(b, c, d), x), ac));
-    return addUnsigned(rotateLeft(a, s), b);
+    a = AddUnsigned(a, AddUnsigned(AddUnsigned(G(b, c, d), x), ac));
+    return AddUnsigned(RotateLeft(a, s), b);
   }
   function HH(a: number, b: number, c: number, d: number, x: number, s: number, ac: number) {
-    a = addUnsigned(a, addUnsigned(addUnsigned(H(b, c, d), x), ac));
-    return addUnsigned(rotateLeft(a, s), b);
+    a = AddUnsigned(a, AddUnsigned(AddUnsigned(H(b, c, d), x), ac));
+    return AddUnsigned(RotateLeft(a, s), b);
   }
   function II(a: number, b: number, c: number, d: number, x: number, s: number, ac: number) {
-    a = addUnsigned(a, addUnsigned(addUnsigned(I(b, c, d), x), ac));
-    return addUnsigned(rotateLeft(a, s), b);
+    a = AddUnsigned(a, AddUnsigned(AddUnsigned(I(b, c, d), x), ac));
+    return AddUnsigned(RotateLeft(a, s), b);
   }
-
-  function convertToWordArray(string: string) {
+  function ConvertToWordArray(string: string) {
     let lWordCount;
     const lMessageLength = string.length;
     const lNumberOfWords_temp1 = lMessageLength + 8;
@@ -68,21 +70,20 @@ function md5(string: string): string {
     lWordArray[lNumberOfWords - 1] = lMessageLength >>> 29;
     return lWordArray;
   }
-
-  function wordToHex(lValue: number) {
-    let wordToHexValue = '',
-      wordToHexValue_temp = '',
+  function WordToHex(lValue: number) {
+    let WordToHexValue = '',
+      WordToHexValue_temp = '',
       lByte,
       lCount;
     for (lCount = 0; lCount <= 3; lCount++) {
       lByte = (lValue >>> (lCount * 8)) & 255;
-      wordToHexValue_temp = '0' + lByte.toString(16);
-      wordToHexValue = wordToHexValue + wordToHexValue_temp.substr(wordToHexValue_temp.length - 2, 2);
+      WordToHexValue_temp = '0' + lByte.toString(16);
+      WordToHexValue = WordToHexValue + WordToHexValue_temp.substr(WordToHexValue_temp.length - 2, 2);
     }
-    return wordToHexValue;
+    return WordToHexValue;
   }
 
-  let x = convertToWordArray(string);
+  let x: number[] = [];
   let k, AA, BB, CC, DD, a, b, c, d;
   const S11 = 7,
     S12 = 12,
@@ -101,6 +102,7 @@ function md5(string: string): string {
     S43 = 15,
     S44 = 21;
 
+  x = ConvertToWordArray(string);
   a = 0x67452301;
   b = 0xefcdab89;
   c = 0x98badcfe;
@@ -127,7 +129,6 @@ function md5(string: string): string {
     d = FF(d, a, b, c, x[k + 13], S12, 0xfd987193);
     c = FF(c, d, a, b, x[k + 14], S13, 0xa679438e);
     b = FF(b, c, d, a, x[k + 15], S14, 0x49b40821);
-
     a = GG(a, b, c, d, x[k + 1], S21, 0xf61e2562);
     d = GG(d, a, b, c, x[k + 6], S22, 0xc040b340);
     c = GG(c, d, a, b, x[k + 11], S23, 0x265e5a51);
@@ -144,7 +145,6 @@ function md5(string: string): string {
     d = GG(d, a, b, c, x[k + 2], S22, 0xfcefa3f8);
     c = GG(c, d, a, b, x[k + 7], S23, 0x676f02d9);
     b = GG(b, c, d, a, x[k + 12], S24, 0x8d2a4c8a);
-
     a = HH(a, b, c, d, x[k + 5], S31, 0xfffa3942);
     d = HH(d, a, b, c, x[k + 8], S32, 0x8771f681);
     c = HH(c, d, a, b, x[k + 11], S33, 0x6d9d6122);
@@ -161,7 +161,6 @@ function md5(string: string): string {
     d = HH(d, a, b, c, x[k + 12], S32, 0xe6db99e5);
     c = HH(c, d, a, b, x[k + 15], S33, 0x1fa27cf8);
     b = HH(b, c, d, a, x[k + 2], S34, 0xc4ac5665);
-
     a = II(a, b, c, d, x[k + 0], S41, 0xf4292244);
     d = II(d, a, b, c, x[k + 7], S42, 0x432aff97);
     c = II(c, d, a, b, x[k + 14], S43, 0xab9423a7);
@@ -178,13 +177,14 @@ function md5(string: string): string {
     d = II(d, a, b, c, x[k + 11], S42, 0xbd3af235);
     c = II(c, d, a, b, x[k + 2], S43, 0x2ad7d2bb);
     b = II(b, c, d, a, x[k + 9], S44, 0xeb86d391);
-
-    a = addUnsigned(a, AA);
-    b = addUnsigned(b, BB);
-    c = addUnsigned(c, CC);
-    d = addUnsigned(d, DD);
+    a = AddUnsigned(a, AA);
+    b = AddUnsigned(b, BB);
+    c = AddUnsigned(c, CC);
+    d = AddUnsigned(d, DD);
   }
-  return (wordToHex(a) + wordToHex(b) + wordToHex(c) + wordToHex(d)).toLowerCase();
+
+  const temp = WordToHex(a) + WordToHex(b) + WordToHex(c) + WordToHex(d);
+  return temp.toLowerCase();
 }
 
 export const PRECONFIGURED_SERVERS: SubsonicServerConfig[] = [
@@ -211,20 +211,24 @@ export const PRECONFIGURED_SERVERS: SubsonicServerConfig[] = [
 ];
 
 export class SubsonicService {
-  public generateAuthParams(config: SubsonicServerConfig, isBinary: boolean = false): URLSearchParams {
+  private generateSalt(): string {
+    return Math.random().toString(36).substring(2, 10);
+  }
+
+  public generateAuthParams(config: SubsonicServerConfig, usePlainPassword = false): URLSearchParams {
     const params = new URLSearchParams();
-    params.append('u', config.username || 'admin');
+    const username = config.username || 'admin';
+    const password = config.password || 'admin';
+
+    params.append('u', username);
     params.append('v', '1.16.1');
     params.append('c', 'CraftedMusicPlayer');
-    if (!isBinary) {
-      params.append('f', 'json');
-    }
+    params.append('f', 'json');
 
-    const password = config.password || 'admin';
-    if (config.authType === 'password' || config.authType === 'plain') {
+    if (usePlainPassword) {
       params.append('p', password);
     } else {
-      const salt = Math.random().toString(36).substring(2, 10);
+      const salt = this.generateSalt();
       const token = md5(password + salt);
       params.append('t', token);
       params.append('s', salt);
@@ -253,15 +257,7 @@ export class SubsonicService {
 
     const attempts = [
       () => this.generateAuthParams(config, false),
-      () => {
-        const p = new URLSearchParams();
-        p.append('u', config.username || 'admin');
-        p.append('v', '1.16.1');
-        p.append('c', 'CraftedMusicPlayer');
-        p.append('f', 'json');
-        p.append('p', config.password || 'admin');
-        return p;
-      },
+      () => this.generateAuthParams(config, true),
     ];
 
     let lastError = 'Connection failed';
@@ -282,74 +278,51 @@ export class SubsonicService {
             return {
               success: true,
               latencyMs,
-              version: sub.version || '1.16.1',
+              version: sub.version || sub.serverVersion,
             };
-          } else if (sub?.error?.message) {
-            lastError = sub.error.message;
+          } else if (sub && sub.error) {
+            lastError = sub.error.message || `Error code ${sub.error.code}`;
           }
         }
-      } catch (err: any) {
-        lastError = err.message || 'Network error';
+      } catch (e: any) {
+        lastError = e.message || 'Network unreachable';
       }
     }
 
-    const latencyMs = Math.round(performance.now() - startTime);
-    return { success: false, latencyMs, error: lastError };
+    return {
+      success: false,
+      latencyMs: 0,
+      error: lastError,
+    };
   }
 
-  public async getPlaylists(config: SubsonicServerConfig): Promise<Playlist[]> {
+  public async search(config: SubsonicServerConfig, query: string, songCount = 500): Promise<{ tracks: Track[]; albums: any[]; artists: any[] }> {
     try {
       const baseUrl = this.cleanUrl(config.url);
-      const params = this.generateAuthParams(config, false);
+      const params = this.generateAuthParams(config, true);
+      params.append('query', query || '');
+      params.append('songCount', songCount.toString());
+      params.append('albumCount', '100');
+      params.append('artistCount', '100');
 
-      const res = await fetch(`${baseUrl}/rest/getPlaylists.view?${params.toString()}`, {
+      const res = await fetch(`${baseUrl}/rest/search3.view?${params.toString()}`, {
         signal: AbortSignal.timeout(8000),
       });
-      if (!res.ok) return [];
+      if (!res.ok) return { tracks: [], albums: [], artists: [] };
 
       const json = await res.json();
-      const sub = json['subsonic-response'];
-      const rawPlaylists = sub?.playlists?.playlist || sub?.playlists || sub?.playlist || [];
-      const list = Array.isArray(rawPlaylists) ? rawPlaylists : [rawPlaylists];
+      const sr = json['subsonic-response']?.searchResult3;
+      if (!sr) return { tracks: [], albums: [], artists: [] };
 
-      return list
-        .filter((p: any) => p && (p.id || p.name))
-        .map((p: any) => ({
-          id: `subsonic-pl-${p.id}`,
-          name: p.name || 'Navidrome Playlist',
-          trackCount: p.songCount || 0,
-          coverUrl: p.coverArt ? this.getCoverArtUrl(config, p.coverArt, 400) : undefined,
-          tracks: [],
-        }));
-    } catch (e) {
-      console.warn('Failed to fetch Subsonic playlists:', e);
-      return [];
-    }
-  }
-
-  public async getPlaylistTracks(config: SubsonicServerConfig, playlistId: string): Promise<Track[]> {
-    try {
-      const baseUrl = this.cleanUrl(config.url);
-      const params = this.generateAuthParams(config, false);
-      const cleanId = playlistId.replace(/^pl-/, '').replace(/^subsonic-pl-/, '');
-      params.append('id', cleanId);
-
-      const res = await fetch(`${baseUrl}/rest/getPlaylist.view?${params.toString()}`, {
-        signal: AbortSignal.timeout(8000),
-      });
-      if (!res.ok) return [];
-
-      const json = await res.json();
-      const playlistObj = json['subsonic-response']?.playlist;
-      const rawSongs = playlistObj?.entry || [];
+      const rawSongs = sr.song || [];
       const songList = Array.isArray(rawSongs) ? rawSongs : [rawSongs];
 
-      return songList.map((s: any) => ({
+      const tracks: Track[] = songList.map((s: any) => ({
         id: `subsonic-${s.id}`,
         subsonicId: s.id,
         title: s.title || 'Untitled',
         artist: s.artist || 'Unknown Artist',
-        album: s.album || playlistObj?.name || 'Navidrome Playlist',
+        album: s.album || 'Navidrome Vault',
         duration: s.duration || 180,
         coverUrl: s.coverArt ? this.getCoverArtUrl(config, s.coverArt, 500) : undefined,
         audioUrl: this.getStreamUrl(config, s.id),
@@ -359,20 +332,26 @@ export class SubsonicService {
         bitrate: s.bitRate,
         format: s.suffix?.toUpperCase() || 'AUDIO',
       }));
+
+      return {
+        tracks,
+        albums: sr.album || [],
+        artists: sr.artist || [],
+      };
     } catch (e) {
-      console.warn('Failed to fetch Subsonic playlist tracks:', e);
-      return [];
+      console.warn('Subsonic search error:', e);
+      return { tracks: [], albums: [], artists: [] };
     }
   }
 
-  public async getAllSongs(config: SubsonicServerConfig): Promise<Track[]> {
+  public async getRandomSongs(config: SubsonicServerConfig, size = 500): Promise<Track[]> {
     try {
       const baseUrl = this.cleanUrl(config.url);
-      const params = this.generateAuthParams(config, false);
-      params.append('size', '500');
+      const params = this.generateAuthParams(config, true);
+      params.append('size', size.toString());
 
       const res = await fetch(`${baseUrl}/rest/getRandomSongs.view?${params.toString()}`, {
-        signal: AbortSignal.timeout(10000),
+        signal: AbortSignal.timeout(8000),
       });
       if (!res.ok) return [];
 
@@ -396,6 +375,93 @@ export class SubsonicService {
         format: s.suffix?.toUpperCase() || 'AUDIO',
       }));
     } catch (e) {
+      console.warn('Failed to fetch Subsonic random songs:', e);
+      return [];
+    }
+  }
+
+  public async getPlaylists(config: SubsonicServerConfig): Promise<Playlist[]> {
+    try {
+      const baseUrl = this.cleanUrl(config.url);
+      const params = this.generateAuthParams(config, true);
+
+      const res = await fetch(`${baseUrl}/rest/getPlaylists.view?${params.toString()}`, {
+        signal: AbortSignal.timeout(8000),
+      });
+      if (!res.ok) return [];
+
+      const json = await res.json();
+      const rawPls = json['subsonic-response']?.playlists?.playlist || [];
+      const plList = Array.isArray(rawPls) ? rawPls : [rawPls];
+
+      return plList.map((p: any) => ({
+        id: `subsonic-pl-${p.id}`,
+        name: p.name || 'Remote Playlist',
+        trackCount: p.songCount || 0,
+        coverUrl: p.coverArt ? this.getCoverArtUrl(config, p.coverArt, 500) : undefined,
+        tracks: [],
+        isCustom: false,
+      }));
+    } catch (e) {
+      console.warn('Failed to fetch Subsonic playlists:', e);
+      return [];
+    }
+  }
+
+  public async getPlaylistTracks(config: SubsonicServerConfig, playlistId: string): Promise<Track[]> {
+    try {
+      const cleanId = playlistId.replace(/^subsonic-pl-/, '');
+      const baseUrl = this.cleanUrl(config.url);
+      const params = this.generateAuthParams(config, true);
+      params.append('id', cleanId);
+
+      const res = await fetch(`${baseUrl}/rest/getPlaylist.view?${params.toString()}`, {
+        signal: AbortSignal.timeout(8000),
+      });
+      if (!res.ok) return [];
+
+      const json = await res.json();
+      const playlistObj = json['subsonic-response']?.playlist;
+      const rawEntries = playlistObj?.entry || [];
+      const entries = Array.isArray(rawEntries) ? rawEntries : [rawEntries];
+
+      return entries.map((s: any) => ({
+        id: `subsonic-${s.id}`,
+        subsonicId: s.id,
+        title: s.title || 'Untitled',
+        artist: s.artist || 'Unknown Artist',
+        album: s.album || playlistObj?.name || 'Navidrome Playlist',
+        duration: s.duration || 180,
+        coverUrl: s.coverArt ? this.getCoverArtUrl(config, s.coverArt, 500) : undefined,
+        audioUrl: this.getStreamUrl(config, s.id),
+        source: 'subsonic' as const,
+        trackNumber: s.track,
+        year: s.year,
+        bitrate: s.bitRate,
+        format: s.suffix?.toUpperCase() || 'AUDIO',
+      }));
+    } catch (e) {
+      console.warn('Failed to fetch Subsonic playlist tracks:', e);
+      return [];
+    }
+  }
+
+  public async getAllSongs(config: SubsonicServerConfig): Promise<Track[]> {
+    try {
+      // 1. Try search3.view with empty query
+      const searchRes = await this.search(config, '', 500);
+      if (searchRes.tracks && searchRes.tracks.length > 0) {
+        return searchRes.tracks;
+      }
+
+      // 2. Try getRandomSongs.view fallback
+      const randomSongs = await this.getRandomSongs(config, 500);
+      if (randomSongs && randomSongs.length > 0) {
+        return randomSongs;
+      }
+
+      return [];
+    } catch (e) {
       console.warn('Failed to fetch Navidrome songs:', e);
       return [];
     }
@@ -405,6 +471,7 @@ export class SubsonicService {
     const baseUrl = this.cleanUrl(config.url);
     const params = this.generateAuthParams(config, true);
     params.append('id', songId);
+    params.append('format', 'raw');
     return `${baseUrl}/rest/stream.view?${params.toString()}`;
   }
 

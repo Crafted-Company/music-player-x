@@ -3,7 +3,9 @@
   "appName": "Music Player",
   "webDir": "dist",
   "server": {
-    "cleartext": true
+    "androidScheme": "http",
+    "cleartext": true,
+    "allowNavigation": ["*"]
   },
   "android": {
     "allowMixedContent": true
