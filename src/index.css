@@ -1,0 +1,118 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    box-sizing: border-box;
+    -webkit-tap-highlight-color: transparent;
+  }
+  
+  html, body, #root {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    background-color: #151212;
+    color: #F3EFEF;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+/* Crafted Co. Theme Panels & Design System */
+.crafted-card {
+  background: #1E1818;
+  border: 1px solid #352929;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.crafted-card:hover {
+  background: #282020;
+  border-color: #4A3A3A;
+}
+
+.crafted-panel {
+  background: #1A1414;
+  border: 1px solid #2E2323;
+}
+
+.crafted-badge-violet {
+  background: rgba(107, 100, 246, 0.15);
+  border: 1px solid rgba(107, 100, 246, 0.3);
+  color: #8C86F8;
+}
+
+.crafted-badge-online {
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.28);
+  color: #34D399;
+}
+
+.crafted-badge-rust {
+  background: rgba(212, 91, 62, 0.15);
+  border: 1px solid rgba(212, 91, 62, 0.3);
+  color: #E27157;
+}
+
+.text-gradient-brand {
+  background: linear-gradient(135deg, #6B64F6 0%, #A9452D 50%, #D45B3E 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* Mono Section Tag: e.g. // LIVE TELEMETRY */
+.mono-tag {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  color: #756C6C;
+  text-transform: uppercase;
+}
+
+/* Custom Sleek Scrollbar */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #352929;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #D45B3E;
+}
+
+/* Lyrics Auto-scroll animation & karaoke glow */
+.lyric-line {
+  transition: transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1), color 0.25s ease, opacity 0.25s ease;
+}
+
+.lyric-active {
+  color: #FFFFFF;
+  text-shadow: 0 0 16px rgba(107, 100, 246, 0.7), 0 0 28px rgba(212, 91, 62, 0.4);
+  font-weight: 600;
+  transform: scale(1.03);
+}
+
+/* Analogue Stick Physics */
+.joystick-thumb {
+  transition: transform 0.05s ease-out;
+  touch-action: none;
+}
+
+.joystick-thumb.returning {
+  transition: transform 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}

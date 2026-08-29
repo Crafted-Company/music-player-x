@@ -1,0 +1,11 @@
+{
+  "appId": "com.crafted.musicplayer",
+  "appName": "Music Player",
+  "webDir": "dist",
+  "server": {
+    "cleartext": true
+  },
+  "android": {
+    "allowMixedContent": true
+  }
+}
