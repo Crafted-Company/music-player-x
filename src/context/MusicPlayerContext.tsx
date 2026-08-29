@@ -126,14 +126,15 @@ export const MusicPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
   const [queue, setQueue] = useState<Track[]>(DEMO_TRACKS);
   const [queueIndex, setQueueIndex] = useState<number>(0);
-  const [currentTrack, setCurrentTrack] = useState<Track | null>(DEMO_TRACKS[0] || null);
+  const [currentTrack, setCurrentTrack] = useState<Track | null>(null);
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const [currentTime, setCurrentTime] = useState<number>(0);
-  const [duration, setDuration] = useState<number>(DEMO_TRACKS[0]?.duration || 0);
+  const [duration, setDuration] = useState<number>(0);
   const [volume, setVolumeState] = useState<number>(0.85);
   const [isMuted, setIsMuted] = useState<boolean>(false);
   const [isShuffle, setIsShuffle] = useState<boolean>(false);
   const [repeatMode, setRepeatMode] = useState<'off' | 'all' | 'one'>('all');
+  const [shuffleDeck, setShuffleDeck] = useState<number[]>([]);
 
   const [lyricsData, setLyricsData] = useState<LyricsData | null>(null);
   const [activeLyricIndex, setActiveLyricIndex] = useState<number>(-1);
@@ -181,7 +182,7 @@ export const MusicPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
   const audioElRef = useRef<HTMLAudioElement>(audioEngine.getAudioElement());
 
-  // Load stored tracks & playlists on startup
+  // Load stored tracks & playlists on startup & sync with server
   useEffect(() => {
     const initLibrary = async () => {
       const stored = await localLibraryService.loadStoredTracks();
@@ -193,6 +194,10 @@ export const MusicPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
           coverUrl: t.coverUrl || coverService.getCachedCover(t.title, t.artist) || undefined,
         }));
         setAllTracks(hydrated);
+        if (!currentTrack) {
+          setCurrentTrack(hydrated[0]);
+          setQueue(hydrated);
+        }
       }
       if (storedPlaylists && storedPlaylists.length > 0) {
         setPlaylists(storedPlaylists);
@@ -240,7 +245,7 @@ export const MusicPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
     });
   }, [allTracks, hiddenTrackIds]);
 
-  // Audio listeners & MediaSession Notification Sync
+  // Audio listeners & System MediaSession Notification Sync
   useEffect(() => {
     const audio = audioElRef.current;
     audioEngine.setEqualizerGains(currentEqGains);
@@ -248,17 +253,21 @@ export const MusicPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
     const onTimeUpdate = () => {
       setCurrentTime(audio.currentTime);
-      if ('mediaSession' in navigator && duration > 0) {
+      if ('mediaSession' in navigator && audio.duration && !isNaN(audio.duration) && audio.duration > 0) {
         try {
           navigator.mediaSession.setPositionState({
-            duration: duration,
-            playbackRate: audio.playbackRate,
-            position: audio.currentTime,
+            duration: Math.max(1, audio.duration),
+            playbackRate: audio.playbackRate || 1.0,
+            position: Math.min(audio.currentTime, audio.duration),
           });
         } catch (e) {}
       }
     };
-    const onLoadedMetadata = () => setDuration(audio.duration || 0);
+    const onLoadedMetadata = () => {
+      if (audio.duration && !isNaN(audio.duration)) {
+        setDuration(audio.duration);
+      }
+    };
     const onPlay = () => {
       setIsPlaying(true);
       if ('mediaSession' in navigator) {
@@ -272,6 +281,11 @@ export const MusicPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
       }
     };
     const onEnded = () => {
+      // Guard against mid-stream network hiccups triggering premature end
+      if (audio.duration > 5 && audio.currentTime < audio.duration - 2) {
+        console.warn('Stream interrupted before end, not skipping');
+        return;
+      }
       if (repeatMode === 'one') {
         audioEngine.seek(0);
         audioEngine.play();
@@ -294,8 +308,8 @@ export const MusicPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
       navigator.mediaSession.setActionHandler('seekto', (details) => {
         if (details.seekTime !== undefined) seek(details.seekTime);
       });
-      navigator.mediaSession.setActionHandler('seekbackward', () => seek(Math.max(0, currentTime - 10)));
-      navigator.mediaSession.setActionHandler('seekforward', () => seek(Math.min(duration, currentTime + 10)));
+      navigator.mediaSession.setActionHandler('seekbackward', () => seek(Math.max(0, audio.currentTime - 10)));
+      navigator.mediaSession.setActionHandler('seekforward', () => seek(Math.min(audio.duration || 0, audio.currentTime + 10)));
     }
 
     return () => {
@@ -305,24 +319,31 @@ export const MusicPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
       audio.removeEventListener('pause', onPause);
       audio.removeEventListener('ended', onEnded);
     };
-  }, [repeatMode, queue, queueIndex, duration, currentTime]);
+  }, [repeatMode, queue, queueIndex, duration]);
 
+  // Sync Android / System Lockscreen & Notification Panel Metadata
   useEffect(() => {
-    if (currentTrack && 'mediaSession' in navigator) {
-      navigator.mediaSession.metadata = new MediaMetadata({
-        title: currentTrack.title,
-        artist: currentTrack.artist,
-        album: currentTrack.album || 'Crafted Vault',
-        artwork: [
-          {
-            src: currentTrack.coverUrl || '/icon.png',
-            sizes: '512x512',
-            type: 'image/png',
-          },
-        ],
-      });
+    if ('mediaSession' in navigator) {
+      if (currentTrack) {
+        navigator.mediaSession.metadata = new MediaMetadata({
+          title: currentTrack.title,
+          artist: currentTrack.artist,
+          album: currentTrack.album || 'Crafted Vault',
+          artwork: [
+            {
+              src: currentTrack.coverUrl || '/icon.png',
+              sizes: '512x512',
+              type: 'image/png',
+            },
+          ],
+        });
+        navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'paused';
+      } else {
+        navigator.mediaSession.metadata = null;
+        navigator.mediaSession.playbackState = 'none';
+      }
     }
-  }, [currentTrack]);
+  }, [currentTrack, isPlaying]);
 
   // Active lyric tracker
   useEffect(() => {
@@ -591,7 +612,7 @@ export const MusicPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
     }
 
     setCurrentTrack(track);
-    audioEngine.loadTrack(playUrl);
+    audioEngine.loadTrack(track.id, playUrl);
     audioEngine.play();
   };
 
@@ -609,9 +630,22 @@ export const MusicPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
   const nextTrack = () => {
     if (queue.length === 0) return;
+
     let nextIdx = queueIndex + 1;
+
     if (isShuffle) {
-      nextIdx = Math.floor(Math.random() * queue.length);
+      // True non-repeating shuffle deck
+      let currentDeck = [...shuffleDeck];
+      if (currentDeck.length === 0) {
+        const pool = Array.from({ length: queue.length }, (_, i) => i).filter((i) => i !== queueIndex);
+        for (let i = pool.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [pool[i], pool[j]] = [pool[j], pool[i]];
+        }
+        currentDeck = pool.length > 0 ? pool : [0];
+      }
+      nextIdx = currentDeck.shift()!;
+      setShuffleDeck(currentDeck);
     } else if (nextIdx >= queue.length) {
       if (repeatMode === 'off') {
         audioEngine.pause();
@@ -619,6 +653,7 @@ export const MusicPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
       }
       nextIdx = 0;
     }
+
     setQueueIndex(nextIdx);
     const nextT = queue[nextIdx];
     if (nextT) {
@@ -655,7 +690,15 @@ export const MusicPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
     setIsMuted(clamped === 0);
   };
 
-  const toggleShuffle = () => setIsShuffle((curr) => !curr);
+  const toggleShuffle = () => {
+    setIsShuffle((curr) => {
+      const next = !curr;
+      if (next) {
+        setShuffleDeck([]);
+      }
+      return next;
+    });
+  };
 
   const cycleRepeatMode = () => {
     setRepeatMode((curr) => (curr === 'off' ? 'all' : curr === 'all' ? 'one' : 'off'));

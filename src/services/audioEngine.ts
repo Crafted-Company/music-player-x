@@ -1,4 +1,6 @@
-// Rock-Solid Universal HTML5 Audio Engine with Blob Fallback & Mechanical Click Synthesizer
+// Rock-Solid Universal HTML5 Audio Engine with Intelligent Caching & Anti-Phantom Playback Guards
+
+import { audioCacheService } from './audioCacheService';
 
 export const EQ_FREQUENCIES = [60, 250, 1000, 4000, 12000];
 
@@ -16,7 +18,8 @@ export const DEFAULT_EQ_PRESETS: { [key: string]: number[] } = {
 class AudioEngine {
   private audio: HTMLAudioElement | null = null;
   private clickAudioCtx: AudioContext | null = null;
-  private isFallbackFetching: boolean = false;
+  private activeSessionId: number = 0;
+  private currentAbortController: AbortController | null = null;
 
   private initAudioElement(): HTMLAudioElement {
     if (this.audio) return this.audio;
@@ -47,37 +50,6 @@ class AudioEngine {
     }
 
     this.audio.preload = 'auto';
-
-    // Blob fetch fallback if Android WebView throws a media decode/format error on direct stream
-    this.audio.onerror = async () => {
-      const audioEl = this.audio;
-      if (!audioEl) return;
-      const currentSrc = audioEl.src;
-
-      if (
-        currentSrc &&
-        !currentSrc.startsWith('blob:') &&
-        !currentSrc.startsWith('data:') &&
-        !this.isFallbackFetching
-      ) {
-        this.isFallbackFetching = true;
-        console.log('Stream error encountered. Attempting Blob fallback fetch for:', currentSrc);
-        try {
-          const res = await fetch(currentSrc);
-          if (res.ok) {
-            const blob = await res.blob();
-            const blobUrl = URL.createObjectURL(blob);
-            audioEl.src = blobUrl;
-            await audioEl.play();
-          }
-        } catch (e) {
-          console.warn('Blob fallback playback error:', e);
-        } finally {
-          this.isFallbackFetching = false;
-        }
-      }
-    };
-
     return this.audio;
   }
 
@@ -85,11 +57,42 @@ class AudioEngine {
     return this.initAudioElement();
   }
 
-  public loadTrack(url: string) {
+  /**
+   * Load track with instant IndexedDB cache lookup and background prefetching
+   */
+  public async loadTrack(trackId: string, directUrl: string): Promise<void> {
     const audio = this.initAudioElement();
-    this.isFallbackFetching = false;
-    audio.src = url;
+    const sessionId = ++this.activeSessionId;
+
+    if (this.currentAbortController) {
+      this.currentAbortController.abort();
+    }
+    this.currentAbortController = new AbortController();
+    const signal = this.currentAbortController.signal;
+
+    // 1. Check local IndexedDB cache first for 0ms instant playback
+    const cachedUrl = await audioCacheService.getCachedAudioUrl(trackId);
+    if (this.activeSessionId !== sessionId) return;
+
+    if (cachedUrl) {
+      audio.src = cachedUrl;
+      audio.load();
+      return;
+    }
+
+    // 2. Load direct streaming URL
+    audio.src = directUrl;
     audio.load();
+
+    // 3. Cache the full audio in background for subsequent instant plays
+    fetch(directUrl, { signal })
+      .then(async (res) => {
+        if (res.ok && this.activeSessionId === sessionId) {
+          const blob = await res.blob();
+          await audioCacheService.cacheAudioBlob(trackId, blob);
+        }
+      })
+      .catch(() => {});
   }
 
   public async play(): Promise<void> {
@@ -97,20 +100,7 @@ class AudioEngine {
     try {
       await audio.play();
     } catch (err) {
-      console.warn('Direct play error or gesture required, attempting blob fetch...', err);
-      if (audio.src && !audio.src.startsWith('blob:') && !audio.src.startsWith('data:')) {
-        try {
-          const res = await fetch(audio.src);
-          if (res.ok) {
-            const blob = await res.blob();
-            const blobUrl = URL.createObjectURL(blob);
-            audio.src = blobUrl;
-            await audio.play();
-          }
-        } catch (blobErr) {
-          console.warn('Fallback play error:', blobErr);
-        }
-      }
+      console.warn('Playback error or user interaction needed:', err);
     }
   }
 
