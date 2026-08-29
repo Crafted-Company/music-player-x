@@ -189,13 +189,23 @@ function md5(string: string): string {
 
 export const PRECONFIGURED_SERVERS: SubsonicServerConfig[] = [
   {
-    id: 'navidrome-default',
-    name: 'Navidrome Server',
-    url: 'http://localhost:4533',
+    id: 'navidrome-wifi',
+    name: 'Navidrome (Wi-Fi 192.168.1.5)',
+    url: 'http://192.168.1.5:4533',
     username: 'admin',
-    password: '',
+    password: 'admin',
     authType: 'token',
     isActive: true,
+    status: 'disconnected',
+  },
+  {
+    id: 'navidrome-tailscale',
+    name: 'Navidrome (Tailscale 100.75.16.37)',
+    url: 'http://100.75.16.37:4533',
+    username: 'admin',
+    password: 'admin',
+    authType: 'token',
+    isActive: false,
     status: 'disconnected',
   },
 ];

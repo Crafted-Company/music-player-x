@@ -1,6 +1,4 @@
-// Rock-Solid Universal HTML5 Audio Engine with Intelligent Caching & Anti-Phantom Playback Guards
-
-import { audioCacheService } from './audioCacheService';
+// Rock-Solid Universal HTML5 Audio Engine
 
 export const EQ_FREQUENCIES = [60, 250, 1000, 4000, 12000];
 
@@ -18,8 +16,6 @@ export const DEFAULT_EQ_PRESETS: { [key: string]: number[] } = {
 class AudioEngine {
   private audio: HTMLAudioElement | null = null;
   private clickAudioCtx: AudioContext | null = null;
-  private activeSessionId: number = 0;
-  private currentAbortController: AbortController | null = null;
 
   private initAudioElement(): HTMLAudioElement {
     if (this.audio) return this.audio;
@@ -58,41 +54,12 @@ class AudioEngine {
   }
 
   /**
-   * Load track with instant IndexedDB cache lookup and background prefetching
+   * Synchronous track loader for instant playback
    */
-  public async loadTrack(trackId: string, directUrl: string): Promise<void> {
+  public loadTrack(directUrl: string): void {
     const audio = this.initAudioElement();
-    const sessionId = ++this.activeSessionId;
-
-    if (this.currentAbortController) {
-      this.currentAbortController.abort();
-    }
-    this.currentAbortController = new AbortController();
-    const signal = this.currentAbortController.signal;
-
-    // 1. Check local IndexedDB cache first for 0ms instant playback
-    const cachedUrl = await audioCacheService.getCachedAudioUrl(trackId);
-    if (this.activeSessionId !== sessionId) return;
-
-    if (cachedUrl) {
-      audio.src = cachedUrl;
-      audio.load();
-      return;
-    }
-
-    // 2. Load direct streaming URL
     audio.src = directUrl;
     audio.load();
-
-    // 3. Cache the full audio in background for subsequent instant plays
-    fetch(directUrl, { signal })
-      .then(async (res) => {
-        if (res.ok && this.activeSessionId === sessionId) {
-          const blob = await res.blob();
-          await audioCacheService.cacheAudioBlob(trackId, blob);
-        }
-      })
-      .catch(() => {});
   }
 
   public async play(): Promise<void> {

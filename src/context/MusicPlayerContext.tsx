@@ -612,7 +612,7 @@ export const MusicPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
     }
 
     setCurrentTrack(track);
-    audioEngine.loadTrack(track.id, playUrl);
+    audioEngine.loadTrack(playUrl);
     audioEngine.play();
   };
 
